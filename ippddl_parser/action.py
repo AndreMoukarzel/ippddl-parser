@@ -2,7 +2,7 @@
 
 import random
 import itertools
-from typing import List
+from typing import List, Tuple, Dict
 from fractions import Fraction
 
 
@@ -17,11 +17,11 @@ class Action:
     def __init__(
             self,
             name: str,
-            parameters,
-            positive_preconditions,
-            negative_preconditions,
-            add_effects,
-            del_effects,
+            parameters: List[List[str]],
+            positive_preconditions: List[List[str]],
+            negative_preconditions: List[List[str]],
+            add_effects: List[List[List[str]]],
+            del_effects: List[List[List[str]]],
             probabilities: List[Fraction]=[]
         ) -> None:
         """Instantiates an Action
@@ -30,16 +30,21 @@ class Action:
         ----------
         name: str
             Identifier of the Action
-        parameters
-
-        positive_preconditions
-
-        negative_preconditions
-
-        add_effects
-
-        del_effects
-
+        parameters: List[List[str]]
+            List with each related object and their type in format
+            [object name, object type]
+        positive_preconditions: List[List[str]]
+            List with positive preconditions' names and related objects in
+            format [name, obj1, obj2, ...].
+        negative_preconditions: List[List[str]]
+            List with negative preconditions' names and related objects in
+            format [name, obj1, obj2, ...].
+        add_effects: List[List[List[str]]]
+            List of each list of positive effects possible. More than one set of
+            effects can be the result or probabilistic actions.
+        del_effects: List[List[List[str]]]
+            List of each list of deletion effects possible. More than one set of
+            effects can be the result or probabilistic actions.
         probabilities: List[Fraction], optional
             Probability of each of the listed add_effects and del_effects pairs
             to occur. If not specified, assumes the action is deterministic and
@@ -60,7 +65,7 @@ class Action:
         self.settle_imprecise_probabilities()
 
 
-    def __str__(self):
+    def __str__(self) -> str:
         return_str = 'action: ' + self.name + \
             '\n  parameters: ' + str(list(self.parameters)) + \
             '\n  positive_preconditions: ' + str([list(i) for i in self.positive_preconditions]) + \
@@ -78,7 +83,7 @@ class Action:
         return return_str + '\n'
 
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if self.name == other.name and self.parameters == other.parameters \
             and self.positive_preconditions == other.positive_preconditions \
             and self.negative_preconditions == other.negative_preconditions \
@@ -88,8 +93,26 @@ class Action:
         return False
     
 
-    def replace(self, group, variables, assignment):
-        new_group = []
+    def replace(self, group: frozenset, variables: List[str], assignment: Tuple[str]) -> List[List[str]]:
+        """Replaces the variables of predicates specified in group with the
+        values specified in assignment.
+         
+        Parameters
+        ----------
+        group: frozenset
+            Set of predicates.
+        variables: List[str]
+            List of variables present in the predicates from group.
+        assignment: Tuple[str]
+            Tuple of values to assign to the variables.
+        
+        Returns
+        -------
+        new_group: List[List[str]]
+            List with each of the predicates with its variables' values set as
+            the assignments, transforming them into propositions.
+        """
+        new_group: List[List[str]] = []
         for pred in group:
             pred = list(pred)
             for i, p in enumerate(pred):
@@ -99,9 +122,30 @@ class Action:
         return new_group
 
 
-    def replace_effects(self, effects, variables, assignment):
-        new_effects = []
-        related_probabilities = []
+    def replace_effects(self, effects: List[frozenset], variables: List[str], assignment: Tuple[str]) -> Tuple[List[List[List[str]]], List[float]]:
+        """Replaces the variables of predicates specified in effects with the
+        values specified in assignment.
+         
+        Parameters
+        ----------
+        effects: List[frozenset]
+            List with all sets of predicates representing the effects of
+            possible outcomes of this Action.
+        variables: List[str]
+            List of variables present in the predicates from group.
+        assignment: Tuple[str]
+            Tuple of values to assign to the variables.
+        
+        Returns
+        -------
+        new_effects: List[List[List[str]]]
+            List of lists with each of the predicates with its variables' values
+            set as the assignments, transforming them into propositions.
+        related_probabilities: List[float]
+            List of the probabilities of each list of predicates occuring.
+        """
+        new_effects: List[List[List[str]]] = []
+        related_probabilities: List[float] = []
         for i, eff in enumerate(effects):
             prob = self.probabilities[i]
             replaced_eff = self.replace(eff, variables, assignment)
@@ -110,7 +154,20 @@ class Action:
         return new_effects, related_probabilities
 
 
-    def groundify(self, objects, types):
+    def groundify(self, objects: Dict[str, List[str]], types: Dict[str, List[str]]):
+        """Applies the given objects and their types to this action, yielding
+        all possible grounded actions.
+
+        Parameters
+        ----------
+        objects: Dict[str, List[str]]
+            Dictionary where the keys are the arguments of the un-grounded action
+            and the values are a list of all possible values of such arguments.
+        types: Dict[str, List[str]]
+            Dictionary where the keys are the possible object types and the
+            values are the arguments that belong to such type. Honestly, I don't
+            know if this even does anything.
+        """
         if not self.parameters:
             yield self
             return
@@ -135,7 +192,7 @@ class Action:
             yield Action(self.name, assignment, positive_preconditions, negative_preconditions, add_effects, del_effects, probs)
     
 
-    def is_applicable(self, state: frozenset):
+    def is_applicable(self, state: frozenset) -> bool:
         """Returns if the action is applicable in the specified state.
         
         The state is expected to be a set of predicates."""
@@ -169,14 +226,27 @@ class Action:
                     raise ValueError(f"Error in Action {self.name}: The sum of minimum values in all imprecise probability intervals must not add upt to more than 100%!")
 
 
-    def get_possible_resulting_states(self, state: frozenset) -> list:
+    def get_possible_resulting_states(self, state: frozenset) -> Tuple[List[frozenset], List[float]]:
         """Gets all possible resulting states of applying this action to the
-        specified state, and the probability of each occuring."""
+        specified state, and the probability of each occuring.
+        
+        Parameters
+        ----------
+        state: frozenset
+            State to which this action will be applied to.
+        
+        Returns
+        -------
+        resulting_states: List[frozenset]
+            List of possible states resulting from applying this action to state.
+        probabilities: List[float]
+            List of probabilities of reaching each of resulting_states.
+        """
         if not self.is_applicable(state):
             return [state], [1.0]
 
-        resulting_states = []
-        probabilities = []
+        resulting_states: List[frozenset] = []
+        probabilities: List[float] = []
         for i, prob in enumerate(self.probabilities):
             add_effects = self.add_effects[i]
             del_effects = self.del_effects[i]
@@ -190,7 +260,22 @@ class Action:
     
 
     def apply(self, state: frozenset) -> frozenset:
-        """Applies the Action to the specified state, if applicable"""
+        """Applies the Action to the specified state, if applicable.
+
+        Randomly chooses, according to the probabilities of each effect
+        occuring, one of the possible states reachable by executing this
+        action on the received state.
+        
+        Parameters
+        ----------
+        state: frozenset
+            State to which this action will be applied to.
+        
+        Returns
+        -------
+        frozenset
+            Resulting state.
+        """
         if not self.is_applicable(state):
             return state
         possible_states, probs = self.get_possible_resulting_states(state)
