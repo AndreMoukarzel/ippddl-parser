@@ -286,6 +286,7 @@ class Action:
         for poss_state, prob in states_and_probs:
             if randf <= prob:
                 return poss_state
+            randf: float = random.uniform(0.0, 1.0)
         return state
 
 
