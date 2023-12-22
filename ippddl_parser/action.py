@@ -2,7 +2,7 @@
 
 import random
 import itertools
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Set
 from fractions import Fraction
 
 
@@ -122,7 +122,7 @@ class Action:
         return new_group
 
 
-    def replace_effects(self, effects: List[frozenset], variables: List[str], assignment: Tuple[str]) -> Tuple[List[List[List[str]]], List[float]]:
+    def replace_effects(self, effects: List[frozenset], variables: List[str], assignment: Tuple[str], connections: Dict[str, Set[str]]) -> Tuple[List[List[List[str]]], List[float]]:
         """Replaces the variables of predicates specified in effects with the
         values specified in assignment.
          
@@ -135,6 +135,9 @@ class Action:
             List of variables present in the predicates from group.
         assignment: Tuple[str]
             Tuple of values to assign to the variables.
+        connections: Dict[str, Set[str]]
+            Dictionary with connections between computers in a SysAdmin problem.
+            Used only with Actions from a SysAdmin problem domain.
         
         Returns
         -------
@@ -148,13 +151,18 @@ class Action:
         related_probabilities: List[float] = []
         for i, eff in enumerate(effects):
             prob = self.probabilities[i]
-            replaced_eff = self.replace(eff, variables, assignment)
+            if ('sysadmin_forall',) in eff: # Special effect of SysAdmin domain
+                replaced_eff = []
+                for comp in connections[assignment[0]]:
+                    replaced_eff.append(('up', comp))
+            else:
+                replaced_eff = self.replace(eff, variables, assignment)
             new_effects.append(replaced_eff)
             related_probabilities.append(prob)
         return new_effects, related_probabilities
 
 
-    def groundify(self, objects: Dict[str, List[str]], types: Dict[str, List[str]]):
+    def groundify(self, objects: Dict[str, List[str]], types: Dict[str, List[str]], connections: Dict[str, Set[str]]=None):
         """Applies the given objects and their types to this action, yielding
         all possible grounded actions.
 
@@ -167,6 +175,9 @@ class Action:
             Dictionary where the keys are the possible object types and the
             values are the arguments that belong to such type. Honestly, I don't
             know if this even does anything.
+        connections: Dict[str, Set[str]]
+            Dictionary with connections between computers in a SysAdmin problem.
+            Used only with Actions from a SysAdmin problem domain.
         """
         if not self.parameters:
             yield self
@@ -187,8 +198,8 @@ class Action:
         for assignment in itertools.product(*type_map):
             positive_preconditions = self.replace(self.positive_preconditions, variables, assignment)
             negative_preconditions = self.replace(self.negative_preconditions, variables, assignment)
-            add_effects, probs = self.replace_effects(self.add_effects, variables, assignment)
-            del_effects, _ = self.replace_effects(self.del_effects, variables, assignment)
+            add_effects, probs = self.replace_effects(self.add_effects, variables, assignment, connections)
+            del_effects, _ = self.replace_effects(self.del_effects, variables, assignment, connections)
             yield Action(self.name, assignment, positive_preconditions, negative_preconditions, add_effects, del_effects, probs)
     
 
@@ -211,19 +222,10 @@ class Action:
                 self.probabilities[i] = prob
                 precise_sum += prob
         
-        imprecise_sum: float = 999.9 # Used to make sure the sum of probabilities does not go over 100%
-        while imprecise_sum + precise_sum > 1.0:
-            imprecise_sum = 0.0
-            min_probs_sum: float = 0.0
-            for i, prob in enumerate(self.raw_probabilities):
-                if isinstance(prob, tuple):
-                    settled_prob: float = random.uniform(prob[0], prob[1])
-                    self.probabilities[i] = Fraction(settled_prob)
-                    min_probs_sum += float(prob[0])
-                    imprecise_sum += settled_prob
-                
-                if min_probs_sum > 1.0:
-                    raise ValueError(f"Error in Action {self.name}: The sum of minimum values in all imprecise probability intervals must not add upt to more than 100%!")
+        for i, prob in enumerate(self.raw_probabilities):
+            if isinstance(prob, tuple):
+                settled_prob: float = random.uniform(prob[0], prob[1])
+                self.probabilities[i] = Fraction(settled_prob)
 
 
     def get_possible_resulting_states(self, state: frozenset) -> Tuple[List[frozenset], List[float]]:

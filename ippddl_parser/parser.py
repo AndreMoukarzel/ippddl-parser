@@ -8,7 +8,8 @@ from .action import Action
 class Parser(DeterministicParser):
     
     SUPPORTED_REQUIREMENTS = DeterministicParser.SUPPORTED_REQUIREMENTS + [
-        ':probabilistic-effects', ':conditional-effects', ':rewards', ':imprecise'
+        ':probabilistic-effects', ':conditional-effects', ':rewards', ':imprecise',
+        ':sysadmin'
     ]
 
 
@@ -92,6 +93,45 @@ class Parser(DeterministicParser):
         return add_effects, del_effects, probabilities
     
 
+    def parse_sysadmin_effects(self, effects: list, action_name: str):
+        """Parses the effects of an action of the SysAdmin domain.
+
+        Parameters
+        ----------
+        effects: list
+            An action's effects. List with all strings found in an action
+            separated by commas.
+        action_name: str
+            Action's name.
+        
+        Returns
+        -------
+        """
+        add_effects = []
+        del_effects = []
+        probabilities = []
+
+        if effects[0] == 'probabilistic':
+            prob_effects = effects[1:3]
+            add_effects, del_effects, probabilities = self.parse_probabilistic_effect(prob_effects, action_name)
+        elif effects[0] == 'imprecise':
+            prob_effects = effects[1:3]
+            add_effects, del_effects, probabilities = self.parse_imprecise_effect(prob_effects, action_name)
+
+        # Parses the "forall" effect, in which there is a probability that each connected computer may turn off
+        # We consider the "forall" effect to be an special action, to be treated when grounding the action.
+        forall_effects = effects[3][2]
+        if forall_effects[0] == 'probabilistic':
+            prob_effects = forall_effects[1:3]
+            probabilities.append(Fraction(prob_effects[0]))
+        elif forall_effects[0] == 'imprecise':
+            probabilities.append([Fraction(val) for val in prob_effects[0]])
+        add_effects.append([])
+        del_effects.append([['sysadmin_forall']])
+
+        return add_effects, del_effects, probabilities
+    
+
     def parse_action(self, group):
         name = group.pop(0)
         if type(name) is not str:
@@ -117,7 +157,10 @@ class Parser(DeterministicParser):
                 self.split_predicates(group.pop(0), positive_preconditions, negative_preconditions, name, ' preconditions')
             elif t == ':effect':
                 effects: str = group.pop(0)
-                add_effects, del_effects, probs = self.parse_action_effects(effects, name)
+                if not 'sysadmin' in self.domain_name:
+                    add_effects, del_effects, probs = self.parse_action_effects(effects, name)
+                else:
+                    add_effects, del_effects, probs = self.parse_sysadmin_effects(effects, name)
             else:
                 group.insert(0, t)
                 extensions.append(group)
