@@ -9,6 +9,8 @@ class ValueIterator:
     that can be represented as an MDP.
     """
     GAMMA: float = 0.5
+    def __init__(self) -> None:
+        self.solved = False
 
     def solve(self, domain, problem, max_diff: float=0.05, iter_limit: int = 1000):
         # Parser
@@ -20,12 +22,12 @@ class ValueIterator:
         goal_pos = parser.positive_goals
         goal_neg = parser.negative_goals
         # Grounding process
-        ground_actions = []
+        self.ground_actions = []
         for action in parser.actions:
             for act in action.groundify(parser.objects, parser.types):
-                ground_actions.append(act)
+                self.ground_actions.append(act)
         # Discover all states
-        all_states = self.get_all_states(init_state, ground_actions)
+        all_states = self.get_all_states(init_state, self.ground_actions)
         # Value Iteration
         max_iter_diff: float = 999.0 # Max difference between updated values in this iteration
         state_vals: Dict[str, float] = {} # Value dict of states
@@ -46,7 +48,7 @@ class ValueIterator:
                     continue
 
                 q_values: List[float] = []
-                for act in ground_actions:
+                for act in self.ground_actions:
                     if act.is_applicable(state):
                         # "Future" states are the s', the states reached by applying the action to current state s 
                         future_states, probabilities = act.get_possible_resulting_states(state)
@@ -63,7 +65,8 @@ class ValueIterator:
                     state_vals[state] = new_state_val
             iter_num += 1
         
-        return state_vals
+        self.solved = True
+        self.state_vals = state_vals
 
 
     def applicable(self, state, positive, negative):
@@ -95,13 +98,35 @@ class ValueIterator:
         return visited
 
 
+    def policy(self, state):
+        best_action = None
+        best_state_val: float = -999.0
+        for act in self.ground_actions:
+            if act.is_applicable(state):
+                # "Future" states are the s', the states reached by applying the action to current state s 
+                future_states, _ = act.get_possible_resulting_states(state)
+
+                # Gets the most valuable result among future states
+                best_fut_val: float = -999.0
+                for fut_state in future_states:
+                    fut_state_index: int = list(self.all_states).index(fut_state)
+                    fut_state_val: float = self.state_vals[fut_state_index]
+                    best_fut_val = max(best_fut_val, fut_state_val)
+                        
+                if best_action == () or best_fut_val >= best_state_val:
+                    best_state_val = best_fut_val
+                    best_action = act
+        return best_action
+
+
 if __name__ == '__main__':
     import sys, time
     start_time = time.time()
     domain = sys.argv[1]
     problem = sys.argv[2]
     iterator = ValueIterator()
-    state_vals = iterator.solve(domain, problem)
+    iterator.solve(domain, problem)
+    state_vals = iterator.state_vals
     print('Time: ' + str(time.time() - start_time) + 's')
     for state, val in state_vals.items():
         print(f"{state}: {val}")
